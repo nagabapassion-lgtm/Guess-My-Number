@@ -1,0 +1,30 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "guessmynumber-45771",
+          "appId": "1:65942190138:android:3a615c706a0f4114da5d03",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "guessmynumber-45771",
+          "configurations": {
+            "android": "1:65942190138:android:3a615c706a0f4114da5d03",
+            "ios": "1:65942190138:ios:5498bab5ccccdcd5da5d03",
+            "web": "1:65942190138:web:fba4db4f102f9dbdda5d03",
+            "windows": "1:65942190138:web:e698ac9f215a9df2da5d03"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "eur3",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

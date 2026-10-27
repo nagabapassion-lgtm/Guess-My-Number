@@ -1,0 +1,50 @@
+name: guessmynumber
+description: A real-time number guessing game. Hide a number, chase a secret, or challenge today's puzzle solo.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: '>=3.24.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase — pinned to compatible versions for Flutter 3.47.
+  # Using the dart-only Firebase packages (no flutterfire_ui, no
+  # google_sign_in yet — those come in Phase 2 when we add Google
+  # sign-in).
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+
+  # Cupertino icons for iOS-style widgets (Flutter default).
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # NOTE: No google_fonts dependency. We use system fonts so the app
+  # works on networks where fonts.gstatic.com is blocked. The visual
+  # identity (colors, spacing, shapes) is identical to v3 - only the
+  # font family changes (system sans-serif instead of Plus Jakarta Sans).
+  #
+  # If you want to add a custom font later, drop the .ttf file in
+  # fonts/ and uncomment the lines below. DO NOT use the google_fonts
+  # package - it fetches from gstatic.com at runtime, which is blocked
+  # in some networks and will cause a white screen.
+  #
+  # fonts:
+  #   - family: PlusJakartaSans
+  #     fonts:
+  #       - asset: fonts/PlusJakartaSans-Regular.ttf
+  #       - asset: fonts/PlusJakartaSans-Bold.ttf
+  #         weight: 700
+  #       - asset: fonts/PlusJakartaSans-ExtraBold.ttf
+  #         weight: 800

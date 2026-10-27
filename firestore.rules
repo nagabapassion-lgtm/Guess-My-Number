@@ -1,0 +1,135 @@
+rules_version = '2';
+
+// Guess My Number — Firestore rules (v4).
+//
+// Schema (v4):
+//   rooms/{roomId}                       - one multiplayer game room
+//     fields: hostId, hostName, playerId, playerName, phase, minBound,
+//             maxBound, currentMinBound, currentMaxBound, attemptsLeft,
+//             secretNumber, round, lastGuess, lastFeedback, winner,
+//             revealedSecret, createdAt, lastUpdated
+//   rooms/{roomId}/guesses/{guessId}     - one guess per player attempt
+//     fields: playerId, value, feedback, attemptNumber, round, timestamp
+//   dailyChallenge/{dateStr}             - container, no fields
+//   dailyChallenge/{dateStr}/entries/{uid}  - one leaderboard entry per
+//     player per day (immutable)
+//
+// v4 changes from v3:
+//   - Added `round` field on rooms/{roomId}. Each rematch bumps it by 1.
+//   - Added `round` field on guesses/{guessId}. The UI filters by round
+//     so old guesses are invisible after a rematch.
+//   - The delete rule on guesses/{guessId} is now OPTIONAL - we no
+//     longer delete guesses on rematch (they're filtered instead). But
+//     the rule still allows the host to delete them (used by deleteRoom
+//     for full room cleanup when the host goes home).
+//
+// Trust model: the secret is stored in Firestore by design. Rules
+// enforce identity at create time (hostId must equal the caller's
+// uid) and trust the player's device for in-game writes. v2 can move
+// the secret off Firestore with Cloud Functions.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----------------------------------------------------------------
+    // Multiplayer rooms
+    // ----------------------------------------------------------------
+    match /rooms/{roomId} {
+      // Any signed-in user can read any room.
+      // (Player needs to read the room they joined; host reads their
+      // own room. Both are signed in anonymously.)
+      allow read: if request.auth != null;
+
+      // Any signed-in user can create a room, but only with their own
+      // uid as hostId. playerId must be null and phase must be 'waiting'
+      // and round must be 1 (initial state).
+      allow create: if request.auth != null
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.playerId == null
+        && request.resource.data.phase == 'waiting'
+        && request.resource.data.round == 1;
+
+      // Any signed-in user can update any room.
+      //
+      // This covers all the rematch-flow transitions:
+      //   - host: offerRematch (over -> rematchOffered, round++)
+      //   - player: acceptRematch (rematchOffered -> playing)
+      //   - player: declineRematch (rematchOffered -> waiting, via vacateRoom)
+      //   - player: joinRoom (waiting -> playing)
+      //   - player: processPlayerGuess (playing -> playing or won/lost)
+      //   - player: vacateRoom (any -> waiting, on leave)
+      // The phase-transition guards live in RoomService (client-side),
+      // consistent with v1's trust model.
+      allow update: if request.auth != null;
+
+      // Only the host can delete a room.
+      allow delete: if request.auth != null
+        && resource.data.hostId == request.auth.uid;
+
+      // Subcollection of guesses.
+      //
+      // Read: any signed-in user can read (the host reads to render
+      // the live guess history; the player reads indirectly via the
+      // room doc's lastGuess/lastFeedback fields).
+      //
+      // Create: any signed-in user can create a guess doc, BUT
+      // RoomService.processPlayerGuess enforces server-side (inside
+      // a transaction) that only the room's current player can
+      // submit guesses for a 'playing' room. The rules alone are
+      // too coarse to enforce this (they'd need a get() on the
+      // parent room, which would cost reads on every guess).
+      //
+      // Delete: only the host of the parent room. Used by
+      // deleteRoom for full cleanup. The rematch flow no longer
+      // deletes guesses (filters by round instead), so this rule
+      // is only exercised when the host abandons the room.
+      match /guesses/{guessId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update: if false;
+        allow delete: if request.auth != null
+          && get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid;
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // Daily Challenge leaderboard (solo mode)
+    //
+    // dailyChallenge/{YYYY-MM-DD}/entries/{uid}
+    //   uid:          the player's auth uid (must match the writer)
+    //   displayName:  string, 1..24 chars
+    //   guessCount:   int, 1..20 (daily is 7 lives, so anything
+    //                 above 20 is nonsense or abuse)
+    //   durationSec:  int >= 0
+    //   submittedAt:  server timestamp
+    //
+    // Entries are immutable: no updates, no deletes.
+    // ----------------------------------------------------------------
+
+    match /dailyChallenge/{dateStr} {
+      allow read: if request.auth != null;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /dailyChallenge/{dateStr}/entries/{uid} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 24
+        && request.resource.data.guessCount is int
+        && request.resource.data.guessCount >= 1
+        && request.resource.data.guessCount <= 20
+        && request.resource.data.durationSec is int
+        && request.resource.data.durationSec >= 0;
+
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

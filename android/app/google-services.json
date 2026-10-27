@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "65942190138",
+    "project_id": "guessmynumber-45771",
+    "storage_bucket": "guessmynumber-45771.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:65942190138:android:3a615c706a0f4114da5d03",
+        "android_client_info": {
+          "package_name": "com.example.guessmynumber1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBafvfMRlbxGQ75t-nWZbePVQ22Ft4gW_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
