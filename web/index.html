@@ -1,65 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0B4F6C">
-  <title>Guess My Number</title>
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
 
-  <!-- Favicon (browser tab icon) - multi-size ICO -->
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="guessmynumber1">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <!-- Apple touch icon (iOS home screen) -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <!-- PWA manifest (Android home screen + install prompt) -->
-  <link rel="manifest" href="/manifest.json">
-
-  <style>
-    #loading-container {
-      position: fixed; inset: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: #FBFBFF; z-index: 1000;
-      transition: opacity 0.4s ease;
-    }
-    #loading-container.hidden { opacity: 0; pointer-events: none; }
-    .spinner {
-      width: 48px; height: 48px;
-      border: 4px solid #DCE0E6;
-      border-top-color: #0B4F6C;
-      border-radius: 50%;
-      animation: spin 0.9s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+  <title>guessmynumber1</title>
+  <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <div id="loading-container"><div class="spinner"></div></div>
-  <div id="flutter-app"></div>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
 
-  <script>
-    window.addEventListener('flutter-first-frame', function () {
-      var lc = document.getElementById('loading-container');
-      if (lc) lc.classList.add('hidden');
-    });
-  </script>
-
-  <script src="flutter.js" defer></script>
-  <script>
-    window.addEventListener('load', function (ev) {
-      _flutter.loader.loadEntrypoint({
-        serviceWorker: { serviceWorkerVersion: null },
-        onEntrypointLoaded: async function (engineInitializer) {
-          let appRunner = await engineInitializer.initializeEngine({
-            renderer: 'html',
-            hostElement: document.getElementById('flutter-app'),
-          });
-          await appRunner.runApp();
-        }
-      });
-    });
-  </script>
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
