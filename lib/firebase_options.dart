@@ -59,13 +59,13 @@ class DefaultFirebaseOptions {
     projectId: 'guessmynumber-45771',
     storageBucket: 'guessmynumber-45771.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyCjjl74JGWlBmAW-5C-wEMt5ujLRJPTtOo',
     appId: '1:65942190138:ios:5498bab5ccccdcd5da5d03',
     messagingSenderId: '65942190138',
     projectId: 'guessmynumber-45771',
     storageBucket: 'guessmynumber-45771.firebasestorage.app',
+    iosClientId: '65942190138-3db2emlt2tif3hdmeil2qej22hct59c4.apps.googleusercontent.com',
     iosBundleId: 'com.example.guessmynumber1',
   );
 

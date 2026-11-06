@@ -1,18 +1,18 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'firebase_options.dart';
 import 'screens/home_screen.dart';
+import 'screens/sign_in_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Capture Flutter framework errors and print them loudly so
-  // we never end up with a silent white screen again.
   FlutterError.onError = (FlutterErrorDetails details) {
     debugPrint('[FLUTTER ERROR] ${details.exception}');
     debugPrint('[FLUTTER STACK] ${details.stack}');
@@ -25,13 +25,6 @@ void main() async {
     return true;
   };
 
-  // Step 1: Initialize Firebase core ONLY.
-  // We do NOT pre-warm anonymous auth here - that was the bug that
-  // caused the white screen. Each controller (HostController,
-  // PlayerController, DailyChallengeService) calls
-  // _auth.signInAnonymously() before its first Firestore write,
-  // so auth happens on demand. This is the original design that
-  // worked before the v3 "fix" introduced the hang.
   debugPrint('[boot] step 1: initializing Firebase core...');
   FirebaseApp? firebaseApp;
   Object? initError;
@@ -41,8 +34,7 @@ void main() async {
     ).timeout(
       const Duration(seconds: 10),
       onTimeout: () => throw TimeoutException(
-        'Firebase.initializeApp timed out after 10s. '
-        'Check your network and firebase_options.dart.',
+        'Firebase.initializeApp timed out after 10s.',
       ),
     );
     debugPrint('[boot] step 1 OK: project = '
@@ -53,12 +45,14 @@ void main() async {
     debugPrint('[boot] stack: $stack');
   }
 
-  // Step 2: Run the app IMMEDIATELY. No auth warmup, no waiting.
-  // The home screen renders right away. Auth happens when the user
-  // taps "Host a Game" / "Join a Game" / "Play Solo" - each
-  // controller calls _auth.signInAnonymously() before its first
-  // Firestore write, so the auth context is ready by the time the
-  // write lands.
+  // Subscribe to auth state changes so the app reacts instantly
+  // when the user signs in or out. We don't need to do anything
+  // in the callback - MaterialApp reroutes based on the stream
+  // below.
+  FirebaseAuth.instance.authStateChanges().listen((user) {
+    debugPrint('[auth] state changed: ${user == null ? "signed out" : "signed in as ${user.uid}"}');
+  });
+
   debugPrint('[boot] step 2: runApp...');
   runApp(
     GuessMyNumberApp(
@@ -95,7 +89,39 @@ class GuessMyNumberApp extends StatelessWidget {
       title: 'Guess My Number',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.data,
-      home: const HomeScreen(),
+      home: const _AuthGate(),
+    );
+  }
+}
+
+/// Decides which screen to show based on auth state.
+///
+/// - If the user is signed in (Google or anonymous), shows HomeScreen.
+/// - If not, shows SignInScreen.
+///
+/// Listens to FirebaseAuth.instance.authStateChanges() so the
+/// transition is instant when the user signs in or out.
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            backgroundColor: AppTheme.offWhite,
+            body: const Center(
+              child: CircularProgressIndicator(color: AppTheme.brightCyan),
+            ),
+          );
+        }
+        if (snapshot.hasData && snapshot.data != null) {
+          return const HomeScreen();
+        }
+        return const SignInScreen();
+      },
     );
   }
 }
@@ -129,17 +155,6 @@ class _BootErrorScreen extends StatelessWidget {
                   color: Color(0xFF991B1B),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                projectId == null
-                    ? 'Firebase did not initialize.'
-                    : 'Firebase project: $projectId',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF7F1D1D),
-                ),
-              ),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -156,17 +171,6 @@ class _BootErrorScreen extends StatelessWidget {
                     color: Color(0xFF7F1D1D),
                     height: 1.4,
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Open the browser dev tools (F12) → Console tab for more detail. '
-                'Every boot step is logged with [boot] prefix.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  height: 1.5,
                 ),
               ),
             ],

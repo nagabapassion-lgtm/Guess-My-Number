@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../app_theme.dart';
 import '../controllers/player_controller.dart';
@@ -32,6 +33,18 @@ class _PlayerJoinScreenState extends State<PlayerJoinScreen> {
   /// no raw Firestore exception text ever leaks to the UI.
   String? _friendlyError;
 
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill the name field with the signed-in user's display name
+    // (from Google auth, or empty for guests). The user can still
+    // edit it if they want a different name for this game.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _nameController.text = user.displayName ?? '';
+    }
+  }
+  
   @override
   void dispose() {
     _codeController.dispose();

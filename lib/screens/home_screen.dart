@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service.dart';
 
 import '../app_theme.dart';
 import '../controllers/host_controller.dart';
@@ -24,6 +26,11 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.offWhite,
+      appBar: AppBar(
+        title: const Text('Guess My Number'),
+        actions: const [_UserChip()],
+        automaticallyImplyLeading: false,
+      ),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -101,7 +108,6 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _goToHostSetup(BuildContext context) {
-    // Reset any stale state from a previous session.
     HostController.instance.reset();
     Navigator.of(context).push(
       AppTheme.pageRoute(const HostSetupScreen()),
@@ -112,6 +118,66 @@ class HomeScreen extends StatelessWidget {
     PlayerController.instance.leaveRoom();
     Navigator.of(context).push(
       AppTheme.pageRoute(const PlayerJoinScreen()),
+    );
+  }
+}
+
+/// Shows the signed-in user's display name + a Sign Out button. Tapping
+/// the chip signs the user out and returns to the sign-in screen (the
+/// _AuthGate in main.dart handles the navigation automatically).
+class _UserChip extends StatelessWidget {
+  const _UserChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    final displayName = user.displayName ?? 'Guest';
+    final isGuest = user.isAnonymous;
+
+    return PopupMenuButton<String>(
+      onSelected: (value) async {
+        if (value == 'signout') {
+          await AuthService().signOut();
+          // The _AuthGate in main.dart will navigate back to SignInScreen
+          // automatically when auth state changes.
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem<String>(
+          value: 'signout',
+          child: Row(
+            children: [
+              Icon(isGuest ? Icons.person_outline : Icons.logout,
+                  size: 18, color: AppTheme.deepTeal),
+              const SizedBox(width: 8),
+              Text(isGuest ? 'Sign in with Google' : 'Sign out'),
+            ],
+          ),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(isGuest ? Icons.person_outline : Icons.account_circle,
+                color: Colors.white, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              isGuest ? 'Guest' : displayName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down, color: Colors.white, size: 18),
+          ],
+        ),
+      ),
     );
   }
 }

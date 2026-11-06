@@ -11,15 +11,12 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase — pinned to compatible versions for Flutter 3.47.
-  # Using the dart-only Firebase packages (no flutterfire_ui, no
-  # google_sign_in yet — those come in Phase 2 when we add Google
-  # sign-in).
+  # Firebase
   firebase_core: ^3.6.0
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.4.4
 
-  # Cupertino icons for iOS-style widgets (Flutter default).
+  # Cupertino icons for iOS-style widgets
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
