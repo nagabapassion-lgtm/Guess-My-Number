@@ -1,16 +1,17 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/auth_service.dart';
+import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../controllers/host_controller.dart';
 import '../controllers/player_controller.dart';
+import '../services/auth_service.dart';
 import '../widgets/animations.dart';
 import 'host_setup_screen.dart';
 import 'player_join_screen.dart';
+import 'profile_screen.dart';
 import 'solo_setup_screen.dart';
 
-/// The first screen the user sees after the app launches.
+/// The first screen the user sees after signing in.
 ///
 /// Three paths, ordered by friction (lowest first):
 ///   1. Play Solo - no friends needed, instant start.
@@ -19,6 +20,9 @@ import 'solo_setup_screen.dart';
 ///
 /// The solo card sits on top with a distinct gradient treatment because
 /// it is the mode anyone can play at any time, even alone at 2am.
+///
+/// The AppBar shows a profile chip on the right: tap it to open the
+/// Profile screen (where you can edit your username and sign out).
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -28,7 +32,7 @@ class HomeScreen extends StatelessWidget {
       backgroundColor: AppTheme.offWhite,
       appBar: AppBar(
         title: const Text('Guess My Number'),
-        actions: const [_UserChip()],
+        actions: const [_ProfileChip()],
         automaticallyImplyLeading: false,
       ),
       body: SafeArea(
@@ -108,6 +112,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _goToHostSetup(BuildContext context) {
+    // Reset any stale state from a previous session.
     HostController.instance.reset();
     Navigator.of(context).push(
       AppTheme.pageRoute(const HostSetupScreen()),
@@ -122,62 +127,75 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/// Shows the signed-in user's display name + a Sign Out button. Tapping
-/// the chip signs the user out and returns to the sign-in screen (the
-/// _AuthGate in main.dart handles the navigation automatically).
-class _UserChip extends StatelessWidget {
-  const _UserChip();
+/// The profile chip in the AppBar. Tapping it opens the Profile
+/// screen where the user can edit their username and sign out.
+///
+/// Shows the user's display name (or "Guest" for anonymous users)
+/// with a dropdown arrow. Reads the auth state live so it updates
+/// immediately when the user signs in or out.
+class _ProfileChip extends StatelessWidget {
+  const _ProfileChip();
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const SizedBox.shrink();
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        final displayName = user?.displayName ?? 'Guest';
+        final isGuest = user == null || user.isAnonymous;
+        final photoUrl = user?.photoURL;
 
-    final displayName = user.displayName ?? 'Guest';
-    final isGuest = user.isAnonymous;
-
-    return PopupMenuButton<String>(
-      onSelected: (value) async {
-        if (value == 'signout') {
-          await AuthService().signOut();
-          // The _AuthGate in main.dart will navigate back to SignInScreen
-          // automatically when auth state changes.
-        }
-      },
-      itemBuilder: (_) => [
-        PopupMenuItem<String>(
-          value: 'signout',
-          child: Row(
-            children: [
-              Icon(isGuest ? Icons.person_outline : Icons.logout,
-                  size: 18, color: AppTheme.deepTeal),
-              const SizedBox(width: 8),
-              Text(isGuest ? 'Sign in with Google' : 'Sign out'),
-            ],
-          ),
-        ),
-      ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(isGuest ? Icons.person_outline : Icons.account_circle,
-                color: Colors.white, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              isGuest ? 'Guest' : displayName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
+        return InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              AppTheme.pageRoute(const ProfileScreen()),
+            );
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (photoUrl != null && !isGuest)
+                  ClipOval(
+                    child: Image.network(
+                      photoUrl,
+                      width: 22,
+                      height: 22,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.account_circle,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                  )
+                else
+                  Icon(
+                    isGuest ? Icons.person_outline : Icons.account_circle,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                const SizedBox(width: 6),
+                Text(
+                  isGuest ? 'Guest' : displayName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(Icons.chevron_right,
+                    color: Colors.white, size: 18),
+              ],
             ),
-            const SizedBox(width: 4),
-            const Icon(Icons.arrow_drop_down, color: Colors.white, size: 18),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -187,7 +205,7 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 36, 24, 8),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -198,7 +216,7 @@ class _Hero extends StatelessWidget {
           FadeSlideIn(
             delay: const Duration(milliseconds: 100),
             child: Text(
-              'Number Guessing Game',
+              'Guess My Number',
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: AppTheme.nearBlack,

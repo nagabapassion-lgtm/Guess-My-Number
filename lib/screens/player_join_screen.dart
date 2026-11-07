@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../app_theme.dart';
 import '../controllers/player_controller.dart';
 import '../services/game_rules.dart';
+import '../services/user_service.dart';
 import '../widgets/animations.dart';
 import '../widgets/ui_components.dart';
 import 'player_guess_screen.dart';
@@ -36,15 +36,16 @@ class _PlayerJoinScreenState extends State<PlayerJoinScreen> {
   @override
   void initState() {
     super.initState();
-    // Pre-fill the name field with the signed-in user's display name
-    // (from Google auth, or empty for guests). The user can still
-    // edit it if they want a different name for this game.
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      _nameController.text = user.displayName ?? '';
-    }
+    // Pre-fill the name field with the user's saved username from
+    // Firestore (falls back to Google display name, then 'Guest').
+    // The user can still edit it for this game.
+    UserService().getDisplayName().then((name) {
+      if (mounted && name.isNotEmpty) {
+        setState(() => _nameController.text = name);
+      }
+    });
   }
-  
+
   @override
   void dispose() {
     _codeController.dispose();
