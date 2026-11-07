@@ -110,6 +110,45 @@ service cloud.firestore {
 
       allow delete: if request.auth != null
         && uid == request.auth.uid;
+
+      // --------------------------------------------------------------
+      // Game history subcollection (NEW in v2.3)
+      //
+      // users/{uid}/games/{gameId}:
+      //   mode:          string
+      //   role:          string
+      //   opponentName:  string
+      //   secretNumber:  int
+      //   guessCount:    int
+      //   result:        string ("won" | "lost")
+      //   durationSec:   int
+      //   playedAt:      timestamp
+      //
+      // Only the owner can read or write their game history. The
+      // gameId is deterministic (room_id + round for multiplayer,
+      // date for daily, timestamp for practice) so duplicate writes
+      // are idempotent. We validate the result field to prevent
+      // garbage data.
+      // --------------------------------------------------------------
+      match /games/{gameId} {
+        allow read: if request.auth != null
+          && uid == request.auth.uid;
+
+        allow create: if request.auth != null
+          && uid == request.auth.uid
+          && request.resource.data.result is string
+          && (request.resource.data.result == 'won'
+              || request.resource.data.result == 'lost')
+          && request.resource.data.mode is string
+          && request.resource.data.guessCount is int
+          && request.resource.data.guessCount >= 0;
+
+        allow update: if request.auth != null
+          && uid == request.auth.uid;
+
+        allow delete: if request.auth != null
+          && uid == request.auth.uid;
+      }
     }
   }
 }

@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 
 import '../app_theme.dart';
 import '../controllers/player_controller.dart';
+import '../game_config.dart';
 import '../models/feedback_type.dart';
 import '../models/game_room.dart';
+import '../services/game_history_service.dart';
 import '../widgets/animations.dart';
 import '../widgets/ui_components.dart';
 import 'home_screen.dart';
@@ -119,6 +121,20 @@ class _PlayerGuessScreenState extends State<PlayerGuessScreen> {
     // Normal end-of-round: show the end dialog once.
     if (room.isOver && !_endDialogShown) {
       _endDialogShown = true;
+      // Record this game in the player's history. Best-effort: errors
+      // are caught inside recordGame so they never break the game flow.
+      final playerWon = room.winner == 'player';
+      final guessCount = GameConfig.defaultLives - room.attemptsLeft;
+      GameHistoryService().recordGame(
+        gameId: 'mp_${room.id}_round_${room.round}',
+        mode: 'multiplayer',
+        role: 'player',
+        opponentName: room.hostName,
+        secretNumber: room.secretNumber,
+        guessCount: guessCount,
+        result: playerWon ? 'won' : 'lost',
+        durationSec: 0,
+      );
       _showEndGameDialog(room);
     }
   }

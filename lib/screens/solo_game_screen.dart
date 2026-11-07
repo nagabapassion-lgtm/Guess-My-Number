@@ -6,6 +6,7 @@ import '../game_config.dart';
 import '../models/feedback_type.dart';
 import '../services/bot_game_engine.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/game_history_service.dart';
 import '../widgets/animations.dart';
 import '../widgets/ui_components.dart';
 import 'daily_leaderboard_screen.dart';
@@ -119,6 +120,23 @@ class _SoloGameScreenState extends State<SoloGameScreen> {
     _engine.processGuess(value);
     _guessController.clear();
     if (!wasOver && _engine.state.isOver) {
+      // Record this game in the player's history. Best-effort: errors
+      // are caught inside recordGame so they never break the game flow.
+      final state = _engine.state;
+      final isDaily = widget.mode == SoloMode.daily;
+      final gameId = isDaily
+          ? 'daily_${dailyChallengeDateKey(DateTime.now())}'
+          : 'practice_${DateTime.now().millisecondsSinceEpoch}';
+      GameHistoryService().recordGame(
+        gameId: gameId,
+        mode: isDaily ? 'solo_daily' : 'solo_practice',
+        role: 'solo',
+        opponentName: isDaily ? 'Daily Challenge' : 'Practice',
+        secretNumber: state.secret,
+        guessCount: state.guessCount,
+        result: state.isWon ? 'won' : 'lost',
+        durationSec: DateTime.now().difference(_startedAt).inSeconds,
+      );
       // Game just ended: brief delay so the last feedback is visible,
       // then show the end dialog.
       Future.delayed(const Duration(milliseconds: 500), () {

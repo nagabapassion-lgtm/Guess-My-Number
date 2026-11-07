@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../services/auth_service.dart';
+import '../services/game_history_service.dart';
 import '../services/user_service.dart';
 import '../widgets/animations.dart';
 import 'home_screen.dart';
@@ -31,6 +32,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final UserService _userService = UserService();
   final AuthService _authService = AuthService();
+  final GameHistoryService _gameHistory = GameHistoryService();
   final _usernameController = TextEditingController();
 
   bool _loading = true;
@@ -38,6 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _error;
   String? _successMessage;
   UserProfile? _profile;
+  GameStats _stats = GameStats.empty;
 
   @override
   void initState() {
@@ -57,10 +60,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // name on first visit).
       await _userService.ensureProfileExists();
       final profile = await _userService.getMyProfile();
+      final stats = await _gameHistory.getStats();
       if (!mounted) return;
       setState(() {
         _profile = profile;
         _usernameController.text = profile?.username ?? '';
+        _stats = stats;
         _loading = false;
       });
     } catch (error) {
@@ -194,8 +199,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               successMessage: _successMessage,
             ),
 
-            // --- Stats placeholder (Phase 2.3) ---
-            _StatsPlaceholder(),
+            // --- Stats + recent games (Phase 2.3) ---
+            _StatsCard(stats: _stats),
+            const SizedBox(height: 20),
+            _RecentGamesCard(gameHistory: _gameHistory),
 
             // --- Sign out button ---
             const SizedBox(height: 8),
@@ -459,17 +466,59 @@ class _UsernameEditor extends StatelessWidget {
   }
 }
 
-/// Placeholder for Phase 2.3 game history. We'll replace this with
-/// real stats (win rate, total games, average guesses) and a recent
-/// games list in the next phase.
-class _StatsPlaceholder extends StatelessWidget {
+/// Stats card: shows total games, win rate, avg guesses, best game.
+/// Reads from the pre-loaded [GameStats] passed in by the parent.
+class _StatsCard extends StatelessWidget {
+  final GameStats stats;
+
+  const _StatsCard({required this.stats});
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (!stats.hasGames) {
+      // Empty state — user hasn't played any games yet.
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceHigh,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppTheme.outlineVariant, width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bar_chart, color: AppTheme.mutedText, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Your stats',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.nearBlack,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No games played yet. Start a game to see your stats here!',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppTheme.mutedText,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceHigh,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppTheme.outlineVariant, width: 1),
       ),
@@ -478,10 +527,10 @@ class _StatsPlaceholder extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.history, color: AppTheme.mutedText, size: 20),
+              const Icon(Icons.bar_chart, color: AppTheme.deepTeal, size: 20),
               const SizedBox(width: 8),
               Text(
-                'Game history',
+                'Your stats',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                   color: AppTheme.nearBlack,
@@ -489,12 +538,280 @@ class _StatsPlaceholder extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  label: 'GAMES',
+                  value: '${stats.totalGames}',
+                  color: AppTheme.deepTeal,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  label: 'WIN RATE',
+                  value: '${stats.winRate}%',
+                  color: stats.winRate >= 50
+                      ? AppTheme.brightCyan
+                      : AppTheme.crimson,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  label: 'AVG GUESSES',
+                  value: stats.avgGuessesPerWin == 0
+                      ? '—'
+                      : '${stats.avgGuessesPerWin}',
+                  color: AppTheme.deepTeal,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  label: 'BEST',
+                  value: stats.bestGuessCount == 0
+                      ? '—'
+                      : '${stats.bestGuessCount}',
+                  color: AppTheme.brightCyan,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Text(
-            'Your stats and recent games will appear here in a future update.',
-            style: theme.textTheme.bodyMedium?.copyWith(
+            '${stats.wins} wins · ${stats.losses} losses',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
               color: AppTheme.mutedText,
-              height: 1.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One stat tile inside the stats card.
+class _StatTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.15), width: 1),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: color,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: AppTheme.mutedText,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Recent games card: streams the user's last 20 games, newest first.
+/// Shows a scrollable list with mode icon, opponent, result, and date.
+class _RecentGamesCard extends StatelessWidget {
+  final GameHistoryService gameHistory;
+
+  const _RecentGamesCard({required this.gameHistory});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.outlineVariant, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.history, color: AppTheme.deepTeal, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Recent games',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.nearBlack,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<List<GameRecord>>(
+            stream: gameHistory.watchRecentGames(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: AppTheme.brightCyan,
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Could not load game history. Check your connection.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.mutedText,
+                    ),
+                  ),
+                );
+              }
+
+              final games = snapshot.data ?? const [];
+              if (games.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'No games yet. Your recent games will appear here '
+                    'after you finish your first match.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.mutedText,
+                      height: 1.5,
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: games
+                    .map((game) => _GameRow(game: game))
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One row in the recent games list.
+class _GameRow extends StatelessWidget {
+  final GameRecord game;
+
+  const _GameRow({required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isWin = game.isWin;
+    final resultColor = isWin ? AppTheme.brightCyan : AppTheme.crimson;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          // Mode icon
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: (isWin ? AppTheme.brightCyan : AppTheme.crimson)
+                  .withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(
+                game.modeIcon,
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Game info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  game.opponentName,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.nearBlack,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${game.modeLabel} · ${game.guessCount} ${game.guessCount == 1 ? "guess" : "guesses"}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppTheme.mutedText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Result badge
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: resultColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              isWin ? 'WIN' : 'LOSS',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: resultColor,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+              ),
             ),
           ),
         ],

@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 
 import '../app_theme.dart';
 import '../controllers/host_controller.dart';
+import '../game_config.dart';
 import '../models/feedback_type.dart';
 import '../models/game_room.dart';
+import '../services/game_history_service.dart';
 import '../services/room_service.dart';
 import '../widgets/animations.dart';
 import '../widgets/ui_components.dart';
@@ -14,17 +16,34 @@ import 'host_waiting_screen.dart';
 
 /// The host's live game view.
 ///
-/// Rematch flow (v4 fix):
+/// Shows everything the host wants to see in real time:
+///   - the room code (with a one-tap copy button so it can be re-shared
+///     with new players between rounds - the code is preserved across
+///     "New Game" resets)
+///   - the player's current safe range
+///   - the player's remaining lives (heart icons)
+///   - the latest guess and its feedback
+///   - the full history of guesses the player has made
+///
+/// Rematch flow (v3 redesign):
 ///   1. Round ends -> end-game dialog: [Back to Home] or [New Game].
-///   2. Host taps "New Game" -> new-round dialog asks for a NEW secret.
-///   3. On confirm the room flips to 'rematchOffered'. Host's dialog
-///      switches to "Waiting for player to accept..." mode.
-///   4. Player gets [Keep Playing] / [Back to Home] prompt.
-///   5. Player accepts -> room -> 'playing'. Both dialogs auto-dismiss.
-///      Live screen re-renders with fresh round, full lives, empty
-///      guess history.
-///   6. If player declines or leaves -> room -> 'waiting'. Host is
-///      sent to waiting screen with same code.
+///   2. Host taps "New Game" -> a new-round dialog asks the host to
+///      enter a NEW secret number (same range as before).
+///   3. On confirm the SAME room is flipped to 'rematchOffered' in
+///      place - same code, same player, fresh secret/lives. The old
+///      guesses are batch-deleted (safe because no new guesses can
+///      land during 'rematchOffered'). The host's dialog switches to
+///      "Waiting for player to accept..." mode.
+///   4. The player's screen detects the 'rematchOffered' phase and
+///      shows them a prompt: [Keep Playing] (-> acceptRematch, phase
+///      flips to 'playing') or [Back to Home] (-> declineRematch, room
+///      vacates back to 'waiting').
+///   5. When the player accepts, the host's dialog auto-dismisses and
+///      the live screen re-renders from the controller (fresh round).
+///   6. If the player declines or leaves at any point, the room flips
+///      back to 'waiting' and this screen automatically returns the
+///      host to the waiting screen with the same code so they can
+///      invite someone new.
 class HostLiveScreen extends StatefulWidget {
   const HostLiveScreen({super.key});
 
@@ -35,10 +54,11 @@ class HostLiveScreen extends StatefulWidget {
 class _HostLiveScreenState extends State<HostLiveScreen> {
   List<GuessRecord> _guessHistory = [];
   Stream<List<GuessRecord>>? _guessesStream;
+  // Store the active subscription so we can cancel it in dispose().
+  // Without this the Firestore snapshot listener leaks after the
+  // screen is popped.
   StreamSubscription<List<GuessRecord>>? _guessesSub;
   bool _endDialogShown = false;
-  bool _endDialogOpen = false;       // end-game dialog currently on screen
-  bool _newRoundDialogOpen = false;  // new-round dialog currently on screen
   bool _navigatedToWaiting = false;
 
   @override
@@ -51,6 +71,9 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
 
   @override
   void dispose() {
+    // Cancel the Firestore guesses subscription before removing the
+    // room-changed listener. Order matters: cancel the stream first
+    // so no setState can race with teardown.
     _guessesSub?.cancel();
     _guessesSub = null;
     HostController.instance.removeListener(_onRoomChanged);
@@ -60,6 +83,8 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
   void _startGuessesStream() {
     final room = HostController.instance.currentRoom;
     if (room == null) return;
+    // Filter by the current round so old guesses from previous
+    // rounds are invisible. The round is bumped on every rematch.
     _guessesStream = RoomService().watchGuesses(room.id, room.round);
     _guessesSub = _guessesStream!.listen((records) {
       if (!mounted) return;
@@ -71,49 +96,59 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
     final room = HostController.instance.currentRoom;
     if (room == null || !mounted) return;
 
-    // Player left -> go to waiting screen with same code.
+    // The player left (vacated the room back to 'waiting'). Send the
+    // host to the waiting screen with the SAME code so they can invite
+    // someone new. popUntil(isFirst) cleanly closes any open dialog
+    // (end-game, new-round-entry, or waiting-for-acceptance) along
+    // with this screen first, so this one path covers every case.
     if (room.isWaiting) {
       if (_navigatedToWaiting) return;
       _navigatedToWaiting = true;
       Navigator.of(context).popUntil((route) => route.isFirst);
-      Navigator.of(context).push(AppTheme.pageRoute(const HostWaitingScreen()));
+      Navigator.of(
+        context,
+      ).push(AppTheme.pageRoute(const HostWaitingScreen()));
       return;
     }
 
-    // Player accepted the rematch -> pop any open dialogs, reset flags,
-    // restart guesses stream with the new round.
+    // A reset was detected (phase flipped back to 'playing' from
+    // 'rematchOffered' after the player accepted): re-arm the end-game
+    // dialog so it can fire again when this round ends. Also restart
+    // the guesses stream so it filters to the new round number.
+    // The new-round dialog (which is in WAITING mode) has its OWN
+    // listener that pops itself when phase becomes 'playing' - so we
+    // don't pop anything here, we just reset the end-dialog flag.
     if (room.isPlaying) {
-      if (_newRoundDialogOpen) {
-        _newRoundDialogOpen = false;
-        Navigator.of(context).pop();
-      }
-      if (_endDialogOpen) {
-        _endDialogOpen = false;
-        Navigator.of(context).pop();
-      }
       _endDialogShown = false;
+      // Restart the guesses stream with the new round so old guesses
+      // are filtered out.
       _guessesSub?.cancel();
       _startGuessesStream();
       return;
     }
 
-    // Host offered rematch - don't show end-game dialog; new-round
-    // dialog is handling the UI in WAITING mode.
-    if (room.isRematchOffered) {
+    if (room.isOver && !_endDialogShown) {
       _endDialogShown = true;
-      return;
-    }
-
-    // Round just ended -> show end-game dialog (only once per round).
-    if (room.isOver && !_endDialogShown && !_endDialogOpen) {
-      _endDialogShown = true;
+      // Record this game in the host's history. Best-effort: errors
+      // are caught inside recordGame so they never break the game flow.
+      final hostWon = room.winner == 'host';
+      final guessCount = GameConfig.defaultLives - room.attemptsLeft;
+      GameHistoryService().recordGame(
+        gameId: 'mp_${room.id}_round_${room.round}',
+        mode: 'multiplayer',
+        role: 'host',
+        opponentName: room.playerName ?? 'Player',
+        secretNumber: room.secretNumber,
+        guessCount: guessCount,
+        result: hostWon ? 'won' : 'lost',
+        durationSec: 0,
+      );
       _showEndGameDialog(room);
     }
   }
 
   void _showEndGameDialog(GameRoom room) {
     final isHostWin = room.winner == 'host';
-    _endDialogOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -123,7 +158,10 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
         isHostSide: true,
         livesLeft: room.attemptsLeft,
         onBackHome: () {
-          _endDialogOpen = false;
+          // Delete the room (also signals the player's screen to go
+          // home - their stream sees the document disappear) and
+          // return to the home screen. Fire-and-forget: the deletion
+          // continues in the background while we navigate.
           HostController.instance.leaveRoom();
           Navigator.of(context).popUntil((route) => route.isFirst);
         },
@@ -132,6 +170,13 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
     );
   }
 
+  /// "New Game" was tapped in the end-game dialog.
+  ///
+  /// Guard first: if the player left while the dialog was open the
+  /// room is 'waiting' now, and resetting would start a round nobody
+  /// can play. Send the host to the waiting screen instead. (The
+  /// room-changed listener usually catches this first and has already
+  /// navigated - this is defense in depth for the race window.)
   void _startNewRound() {
     final room = HostController.instance.currentRoom;
     if (room == null || !room.isOver) {
@@ -139,16 +184,17 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
       if (_navigatedToWaiting) return;
       _navigatedToWaiting = true;
       Navigator.of(context).popUntil((route) => route.isFirst);
-      Navigator.of(context).push(AppTheme.pageRoute(const HostWaitingScreen()));
+      Navigator.of(
+        context,
+      ).push(AppTheme.pageRoute(const HostWaitingScreen()));
       return;
     }
-    _endDialogOpen = false;
+    // Close the end-game dialog and ask the host for the new secret.
     Navigator.of(context).pop();
     _showNewRoundDialog(room);
   }
 
   void _showNewRoundDialog(GameRoom room) {
-    _newRoundDialogOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -157,10 +203,11 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
         maxBound: room.maxBound,
         playerName: room.playerName,
         onCancel: () {
-          _newRoundDialogOpen = false;
+          // Back out of the new-round dialog; bring the end-game dialog
+          // back so the host still has both choices. If the player left
+          // meanwhile, _onRoomChanged handles the waiting transition.
           Navigator.of(context).pop();
           _endDialogShown = false;
-          _endDialogOpen = false;
           _onRoomChanged();
         },
       ),
@@ -282,9 +329,12 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
   }
 }
 
-/// The room code chip with copy-to-clipboard.
+/// The room code, always visible with a one-tap copy button. The code
+/// is PRESERVED across "New Game" resets, so the host can re-share it
+/// with new players between rounds or after someone leaves.
 class _RoomCodeChip extends StatelessWidget {
   final String code;
+
   const _RoomCodeChip({required this.code});
 
   @override
@@ -346,6 +396,7 @@ class _RoomCodeChip extends StatelessWidget {
 
 class _LastGuessCard extends StatelessWidget {
   final GameRoom room;
+
   const _LastGuessCard({required this.room});
 
   @override
@@ -429,6 +480,7 @@ Color _colorForFeedback(FeedbackType? feedback) {
 
 class _GuessHistoryCard extends StatelessWidget {
   final List<GuessRecord> history;
+
   const _GuessHistoryCard({required this.history});
 
   @override
@@ -472,6 +524,7 @@ class _GuessHistoryCard extends StatelessWidget {
 
 class _HistoryRow extends StatelessWidget {
   final GuessRecord record;
+
   const _HistoryRow({required this.record});
 
   @override
@@ -486,7 +539,7 @@ class _HistoryRow extends StatelessWidget {
             width: 28,
             height: 28,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppTheme.deepTeal,
               shape: BoxShape.circle,
             ),
@@ -529,9 +582,12 @@ class _HistoryRow extends StatelessWidget {
     );
   }
 }
-/// The end-game dialog. Shows the round result and offers the host
-/// two choices: go home (deletes the room) or start a new round
-/// (opens the secret-entry dialog).
+
+/// The end-game dialog. Shows the result of the round and offers the
+/// host two choices: go home (deletes the room) or start a new round
+/// (opens the secret-entry dialog). The reset itself - and its loading
+/// and error states - live in [_NewRoundDialog], so this dialog stays
+/// simple: both buttons are plain callbacks.
 class _EndGameDialog extends StatefulWidget {
   final bool isWin;
   final int? revealedSecret;
@@ -566,11 +622,17 @@ class _EndGameDialogState extends State<_EndGameDialog>
       duration: const Duration(milliseconds: 320),
       vsync: this,
     )..forward();
-    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     _slide = Tween<Offset>(
       begin: const Offset(0, 0.10),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
   }
 
   @override
@@ -581,8 +643,11 @@ class _EndGameDialogState extends State<_EndGameDialog>
 
   @override
   Widget build(BuildContext context) {
+    // For host: isWin means host won (player lost).
+    // For player: isWin means player won.
     final isHostWin = widget.isHostSide && widget.isWin;
     final isPlayerWin = !widget.isHostSide && widget.isWin;
+
     final Color headlineColor =
         isHostWin || isPlayerWin ? AppTheme.brightCyan : AppTheme.crimson;
     final String headline =
@@ -590,6 +655,7 @@ class _EndGameDialogState extends State<_EndGameDialog>
     final IconData headlineIcon = (isHostWin || isPlayerWin)
         ? Icons.emoji_events
         : Icons.sentiment_very_dissatisfied;
+
     final String detail = widget.isHostSide
         ? (widget.isWin
             ? 'The player ran out of lives.'
@@ -648,14 +714,18 @@ class _EndGameDialogState extends State<_EndGameDialog>
                     decoration: BoxDecoration(
                       color: AppTheme.offWhite,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppTheme.outlineVariant, width: 1),
+                      border: Border.all(
+                          color: AppTheme.outlineVariant, width: 1),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
                           'Secret was ',
-                          style: TextStyle(color: AppTheme.mutedText, fontSize: 14),
+                          style: TextStyle(
+                            color: AppTheme.mutedText,
+                            fontSize: 14,
+                          ),
                         ),
                         Text(
                           '${widget.revealedSecret}',
@@ -693,14 +763,26 @@ class _EndGameDialogState extends State<_EndGameDialog>
   }
 }
 
-/// The new-round dialog. Has TWO modes:
-///   - SECRET_ENTRY (initial): host types a new secret and taps Start Round.
-///     On confirm, offerRematch() runs - room flips to 'rematchOffered'.
-///     Dialog switches to WAITING mode.
-///   - WAITING (after offer succeeds): shows "Waiting for {player} to
-///     accept..." with a spinner and Cancel button. Auto-dismisses when
-///     room transitions to 'playing' (player accepted). If player declines,
-///     room flips to 'waiting' and the live screen navigates us away.
+/// The new-round dialog (v3 redesign). Has TWO modes:
+///
+///   - SECRET_ENTRY mode (initial): the host types a new secret number
+///     and taps "Start Round". On confirm, [HostController.offerRematch]
+///     runs - it flips the room to 'rematchOffered' in a transaction
+///     and batch-deletes the old guesses. The dialog then switches to
+///     WAITING mode.
+///
+///   - WAITING mode (after the offer succeeds): shows "Waiting for
+///     {playerName} to accept..." with a spinner and a Cancel button.
+///     The dialog auto-dismisses when the room transitions to 'playing'
+///     (the live screen's _onRoomChanged listener pops it). If the
+///     player declines or leaves, the room flips to 'waiting' and the
+///     live screen navigates to the waiting screen, popping this dialog
+///     along the way.
+///
+/// Self-contained on purpose: it validates the secret against the
+/// original range, calls the controller itself, shows its own loading
+/// state while the reset is in flight, and surfaces its own inline
+/// error (never a raw Firestore message) on failure.
 class _NewRoundDialog extends StatefulWidget {
   final int minBound;
   final int maxBound;
@@ -726,7 +808,7 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
 
   final _secretController = TextEditingController();
   bool _starting = false;
-  bool _waiting = false;
+  bool _waiting = false; // true once offerRematch succeeded
   String? _error;
 
   @override
@@ -736,12 +818,23 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
       duration: const Duration(milliseconds: 320),
       vsync: this,
     )..forward();
-    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     _slide = Tween<Offset>(
       begin: const Offset(0, 0.10),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
 
+    // While in WAITING mode, watch the controller for the room
+    // transitioning to 'playing' (player accepted) so we can
+    // auto-dismiss. Also catches the 'waiting' transition (player
+    // declined) - in that case the live screen's listener handles
+    // navigation, but we pop here too so the dialog doesn't linger.
     HostController.instance.addListener(_onRoomChanged);
   }
 
@@ -754,21 +847,31 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
   }
 
   void _onRoomChanged() {
-    if (!_waiting) return;
+    if (!_waiting) return; // only react in WAITING mode
     final room = HostController.instance.currentRoom;
     if (room == null) return;
     if (room.isPlaying) {
+      // Player accepted the rematch. Pop this dialog - the live
+      // screen re-renders from the controller (fresh round, same
+      // code).
       if (!mounted) return;
       Navigator.of(context).pop();
     }
+    // If the room went back to 'waiting' (player declined), the live
+    // screen's listener is already navigating us away - it will pop
+    // this dialog via popUntil. Nothing to do here.
   }
 
   Future<void> _onStart() async {
     if (_starting) return;
 
+    // Guard: the player may have left while the host was typing. The
+    // live screen's listener detects the 'waiting' transition and is
+    // already navigating us away - do nothing here.
     final room = HostController.instance.currentRoom;
     if (room == null || !room.isOver) return;
 
+    // Validate the secret against the original range.
     final value = int.tryParse(_secretController.text.trim());
     if (value == null || value < widget.minBound || value > widget.maxBound) {
       setState(() => _error =
@@ -784,6 +887,9 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
     try {
       await HostController.instance.offerRematch(newSecret: value);
       if (!mounted) return;
+      // Success: switch to WAITING mode. The dialog stays up until
+      // the player accepts (room -> 'playing', _onRoomChanged pops)
+      // or declines (room -> 'waiting', live screen navigates us away).
       setState(() {
         _starting = false;
         _waiting = true;
@@ -794,11 +900,14 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
       setState(() {
         _starting = false;
         if (raw.contains('permission')) {
+          // The most likely cause: the round-2 rules (which allow the
+          // host to delete guess docs) are not deployed yet.
           _error = 'Permission denied. Deploy the latest Firestore rules '
               '(firebase deploy --only firestore:rules) and try again.';
         } else if (raw.contains('network') || raw.contains('unavailable')) {
           _error = 'Could not reach the server. Check your connection.';
-        } else if (raw.contains('already left') || raw.contains('not ready')) {
+        } else if (raw.contains('already left') ||
+            raw.contains('not ready')) {
           _error = 'The player has left. Waiting for a new player.';
         } else {
           _error = 'Could not start the round. Try again.';
@@ -846,7 +955,11 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
             color: AppTheme.brightCyan.withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.casino, color: AppTheme.brightCyan, size: 40),
+          child: const Icon(
+            Icons.casino,
+            color: AppTheme.brightCyan,
+            size: 40,
+          ),
         ),
         const SizedBox(height: 18),
         Text(
@@ -873,8 +986,10 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
           controller: _secretController,
           enabled: !_starting,
           decoration: InputDecoration(
-            hintText: 'Between ${widget.minBound} and ${widget.maxBound}',
-            prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.mutedText),
+            hintText:
+                'Between ${widget.minBound} and ${widget.maxBound}',
+            prefixIcon:
+                const Icon(Icons.lock_outline, color: AppTheme.mutedText),
           ),
           keyboardType: TextInputType.number,
           inputFormatters: [
@@ -946,8 +1061,11 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
             color: AppTheme.brightCyan.withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.hourglass_top,
-              color: AppTheme.brightCyan, size: 40),
+          child: const Icon(
+            Icons.hourglass_top,
+            color: AppTheme.brightCyan,
+            size: 40,
+          ),
         ),
         const SizedBox(height: 18),
         Text(
@@ -983,6 +1101,8 @@ class _NewRoundDialogState extends State<_NewRoundDialog>
         const SizedBox(height: 20),
         OutlinedButton(
           onPressed: () {
+            // Cancel: leave the room (deletes it; the player is sent
+            // home) and go back to the home screen.
             HostController.instance.leaveRoom();
             Navigator.of(context).popUntil((route) => route.isFirst);
           },
