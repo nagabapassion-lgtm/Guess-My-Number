@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../controllers/host_controller.dart';
 import '../controllers/player_controller.dart';
-import '../services/auth_service.dart';
 import '../widgets/animations.dart';
 import 'host_setup_screen.dart';
 import 'player_join_screen.dart';

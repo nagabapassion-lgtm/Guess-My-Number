@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +11,7 @@ import '../services/bot_game_engine.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/game_history_service.dart';
 import '../widgets/animations.dart';
+import '../widgets/range_bar.dart';
 import '../widgets/ui_components.dart';
 import 'daily_leaderboard_screen.dart';
 
@@ -51,13 +55,49 @@ class _SoloGameScreenState extends State<SoloGameScreen> {
   // Daily-mode bookkeeping.
   final _dailyService = DailyChallengeService();
   bool _alreadySubmitted = false;
+  bool _checkingSubmitted = true; // loading state for the daily check
 
   @override
   void initState() {
     super.initState();
-    _startNewGame();
     if (widget.mode == SoloMode.daily) {
-      _checkSubmitted();
+      // For Daily Challenge: FIRST check if the user has already
+      // played today. If they have, show a "you already played" screen
+      // instead of starting a new game. This prevents the bug where
+      // users could play the daily challenge unlimited times.
+      _checkSubmittedThenStart();
+    } else {
+      // Practice mode: always start a new game (no daily limit).
+      _startNewGame();
+      _checkingSubmitted = false;
+    }
+  }
+
+  /// Check if the user has already submitted today's Daily Challenge.
+  /// If yes, set _alreadySubmitted = true (the UI shows a "come back
+  /// tomorrow" screen instead of the game). If no, start a fresh game.
+  Future<void> _checkSubmittedThenStart() async {
+    try {
+      final submitted = await _dailyService.hasSubmittedToday();
+      if (!mounted) return;
+      setState(() {
+        _alreadySubmitted = submitted;
+        _checkingSubmitted = false;
+      });
+      if (!submitted) {
+        // Only start the game if the user hasn't played today.
+        _startNewGame();
+      }
+    } catch (_) {
+      // Offline or auth not ready: default to "not submitted yet"
+      // and start the game. Submitting will surface a friendly error
+      // if it turns out they already have an entry today.
+      if (!mounted) return;
+      setState(() {
+        _alreadySubmitted = false;
+        _checkingSubmitted = false;
+      });
+      _startNewGame();
     }
   }
 
@@ -88,19 +128,6 @@ class _SoloGameScreenState extends State<SoloGameScreen> {
     setState(() {});
   }
 
-  Future<void> _checkSubmitted() async {
-    try {
-      final submitted = await _dailyService.hasSubmittedToday();
-      if (mounted) {
-        setState(() => _alreadySubmitted = submitted);
-      }
-    } catch (_) {
-      // Offline or auth not ready: default to "not submitted yet".
-      // Submitting will surface a friendly error if it turns out they
-      // already have an entry today.
-    }
-  }
-
   @override
   void dispose() {
     _guessController.dispose();
@@ -116,6 +143,8 @@ class _SoloGameScreenState extends State<SoloGameScreen> {
       );
       return;
     }
+    // Light haptic on each guess submission.
+    HapticFeedback.selectionClick();
     final wasOver = _engine.state.isOver;
     _engine.processGuess(value);
     _guessController.clear();
@@ -207,8 +236,31 @@ class _SoloGameScreenState extends State<SoloGameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = _engine.state;
     final isDaily = widget.mode == SoloMode.daily;
+
+    // Daily Challenge: if we're still checking whether the user has
+    // played today, show a loading screen instead of the game.
+    if (isDaily && _checkingSubmitted) {
+      return Scaffold(
+        backgroundColor: AppTheme.offWhite,
+        appBar: AppBar(title: const Text('Daily Challenge')),
+        body: const Center(
+          child: CircularProgressIndicator(color: AppTheme.brightCyan),
+        ),
+      );
+    }
+
+    // Daily Challenge: if the user has already played today, show a
+    // "come back tomorrow" screen instead of the game. This prevents
+    // the bug where users could play the daily challenge unlimited
+    // times by closing the end-game dialog and starting a new game.
+    if (isDaily && _alreadySubmitted) {
+      return _AlreadyPlayedScreen(
+        onViewLeaderboard: _openLeaderboard,
+      );
+    }
+
+    final state = _engine.state;
 
     return Scaffold(
       backgroundColor: AppTheme.offWhite,
@@ -241,17 +293,18 @@ class _SoloGameScreenState extends State<SoloGameScreen> {
               accent: AppTheme.brightCyan,
             ),
             const SizedBox(height: 16),
+            // Visual range bar (replaces the old text-only StatCard).
+            RangeBar(
+              minBound: state.minBound,
+              maxBound: state.maxBound,
+              currentMinBound: state.currentMinBound,
+              currentMaxBound: state.currentMaxBound,
+              lastGuess: state.lastGuess,
+              lastFeedback: state.lastFeedback,
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(
-                  child: StatCard(
-                    label: 'SAFE RANGE',
-                    value: state.rangeText,
-                    icon: Icons.track_changes,
-                    accent: AppTheme.brightCyan,
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: StatCard(
                     label: 'LIVES LEFT',
@@ -542,6 +595,7 @@ class _SoloEndDialogState extends State<_SoloEndDialog>
   late final AnimationController _controller;
   late final Animation<double> _opacity;
   late final Animation<Offset> _slide;
+  late final ConfettiController _confettiController;
 
   final _nameController = TextEditingController();
   bool _submitting = false;
@@ -558,11 +612,21 @@ class _SoloEndDialogState extends State<_SoloEndDialog>
       begin: const Offset(0, 0.10),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    // Confetti: play a 2-second burst when the player wins.
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
+    if (widget.isWin) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _confettiController.play();
+        HapticFeedback.mediumImpact();
+      });
+    }
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _confettiController.dispose();
     _nameController.dispose();
     super.dispose();
   }
@@ -581,33 +645,59 @@ class _SoloEndDialogState extends State<_SoloEndDialog>
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      child: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _slide,
-          child: Container(
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          // Confetti overlay — bursts when the player wins.
+          if (widget.isWin)
+            Positioned(
+              top: -10,
+              child: ConfettiWidget(
+                confettiController: _confettiController,
+                blastDirection: math.pi / 2,
+                maxBlastForce: 12,
+                minBlastForce: 6,
+                emissionFrequency: 0.4,
+                numberOfParticles: 18,
+                gravity: 0.15,
+                blastDirectionality: BlastDirectionality.directional,
+                colors: const [
+                  AppTheme.deepTeal,
+                  AppTheme.brightCyan,
+                  Color(0xFFFFD700),
+                  Colors.white,
+                ],
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: headlineColor.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(headlineIcon, color: headlineColor, size: 40),
+          // The dialog content
+          FadeTransition(
+            opacity: _opacity,
+            child: SlideTransition(
+              position: _slide,
+              child: Container(
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
                 ),
-                const SizedBox(height: 18),
-                Text(
-                  headline,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: headlineColor.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(headlineIcon, color: headlineColor, size: 40),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      headline,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
                     color: headlineColor,
                   ),
                 ),
@@ -722,6 +812,8 @@ class _SoloEndDialogState extends State<_SoloEndDialog>
           ),
         ),
       ),
+    ],
+      ),
     );
   }
 
@@ -738,5 +830,83 @@ class _SoloEndDialogState extends State<_SoloEndDialog>
     if (mounted) {
       setState(() => _submitting = false);
     }
+  }
+}
+
+/// Shown when the user opens the Daily Challenge but has already
+/// submitted today. Replaces the game screen with a "come back
+/// tomorrow" message + a button to view today's leaderboard.
+///
+/// This is the fix for the bug where users could play the daily
+/// challenge unlimited times by closing the end-game dialog and
+/// starting a new game from the home screen.
+class _AlreadyPlayedScreen extends StatelessWidget {
+  final VoidCallback onViewLeaderboard;
+
+  const _AlreadyPlayedScreen({required this.onViewLeaderboard});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: AppTheme.offWhite,
+      appBar: AppBar(title: const Text('Daily Challenge')),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+              Container(
+                width: 88,
+                height: 88,
+                margin: const EdgeInsets.only(bottom: 24),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppTheme.brightCyan.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline,
+                  color: AppTheme.brightCyan,
+                  size: 48,
+                ),
+              ),
+              Text(
+                'You already played today!',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.nearBlack,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'The Daily Challenge resets at midnight. Come back '
+                'tomorrow for a new puzzle!',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: AppTheme.mutedText,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                onPressed: onViewLeaderboard,
+                icon: const Icon(Icons.leaderboard, size: 20),
+                label: const Text("View today's leaderboard"),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text('Back to home'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -222,19 +222,24 @@ class _PlayerJoinScreenState extends State<PlayerJoinScreen> {
   String _mapError(String raw) {
     final lower = raw.toLowerCase();
 
-    // Permission denied: Firestore security rules blocked the read or
-    // write. For the join flow this usually means the room exists but
-    // is no longer in a joinable state (already started, full, or
-    // owned by a different player).
-    if (lower.contains('permission-denied') ||
-        lower.contains('permission_denied') ||
-        lower.contains('insufficient permissions') ||
-        lower.contains('missing or insufficient')) {
-      return "Couldn't join that game. It may have already started.";
+    // Already started / in progress: the room exists but is no longer
+    // in 'waiting' state. The most specific message — tells the user
+    // exactly what happened.
+    if (lower.contains('already started') ||
+        lower.contains('already in progress') ||
+        lower.contains('already finished')) {
+      return 'That game has already started. Ask the host for a new code.';
     }
 
-    // Not found: the document doesn't exist. Typo in the code, the
-    // host cancelled, or the room was never created.
+    // Already joined / room full: another player beat you to it.
+    if (lower.contains('already joined') ||
+        lower.contains('room full') ||
+        lower.contains('someone else already joined')) {
+      return 'Another player already joined that game. Ask the host for a new code.';
+    }
+
+    // Not found: the document doesn't exist. Most likely a typo in
+    // the code, or the host cancelled/deleted the room.
     if (lower.contains('not-found') ||
         lower.contains('not_found') ||
         lower.contains('no such document') ||
@@ -244,13 +249,23 @@ class _PlayerJoinScreenState extends State<PlayerJoinScreen> {
         lower.contains('no room') ||
         lower.contains('unknown code') ||
         lower.contains('code not found') ||
-        lower.contains('invalid code')) {
-      return 'No game found with that code. Check it and try again.';
+        lower.contains('invalid code') ||
+        lower.contains('could not find a room')) {
+      return 'No game found with that code. Check the 6-character code and try again.';
+    }
+
+    // Permission denied: Firestore security rules blocked the read or
+    // write. For the join flow this usually means the room exists but
+    // is no longer in a joinable state. We've already handled the
+    // specific cases above, so this is a fallback.
+    if (lower.contains('permission-denied') ||
+        lower.contains('permission_denied') ||
+        lower.contains('insufficient permissions') ||
+        lower.contains('missing or insufficient')) {
+      return "Couldn't join that game. It may have already started or been cancelled.";
     }
 
     // Network / availability: server unreachable, timeout, offline.
-    // 'Failed to get document' is cloud_firestore's generic wrapper
-    // message for transport-level failures, so it lives here.
     if (lower.contains('unavailable') ||
         lower.contains('deadline-exceeded') ||
         lower.contains('deadline_exceeded') ||
@@ -262,22 +277,21 @@ class _PlayerJoinScreenState extends State<PlayerJoinScreen> {
         lower.contains('failed to get document') ||
         lower.contains('stream interrupted') ||
         lower.contains('offline')) {
-      return "Couldn't reach the server. Check your connection.";
+      return "Couldn't reach the server. Check your internet connection and try again.";
     }
 
-    // Already started / in progress / full: same user-facing message
-    // as permission-denied, since both boil down to "you can't join
-    // this room right now".
-    if (lower.contains('already started') ||
-        lower.contains('already in progress') ||
-        lower.contains('already joined') ||
-        lower.contains('game full') ||
-        lower.contains('room full')) {
-      return "Couldn't join that game. It may have already started.";
+    // Not signed in: auth state expired or never initialized.
+    if (lower.contains('not signed in') ||
+        lower.contains('no user') ||
+        lower.contains('unauthenticated') ||
+        lower.contains('requires authentication')) {
+      return 'You need to be signed in. Go back and sign in again.';
     }
 
-    // Fallback: never leak the raw exception text.
-    return 'Something went wrong. Try again.';
+    // Fallback: never leak the raw exception text. Give the user a
+    // helpful message + suggest retrying. This is the catch-all for
+    // any error we didn't anticipate.
+    return 'Something went wrong. Check the code and try again, or go back and retry.';
   }
 }
 

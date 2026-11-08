@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +13,7 @@ import '../models/game_room.dart';
 import '../services/game_history_service.dart';
 import '../services/room_service.dart';
 import '../widgets/animations.dart';
+import '../widgets/range_bar.dart';
 import '../widgets/ui_components.dart';
 import 'host_waiting_screen.dart';
 
@@ -268,17 +271,20 @@ class _HostLiveScreenState extends State<HostLiveScreen> {
                 const SizedBox(height: 12),
                 _RoomCodeChip(code: room.id),
                 const SizedBox(height: 16),
+                // Visual range bar (replaces the old text-only StatCard).
+                // The narrowing range is the core mechanic — making it
+                // visual is the biggest "feels alive" upgrade.
+                RangeBar(
+                  minBound: room.minBound,
+                  maxBound: room.maxBound,
+                  currentMinBound: room.currentMinBound,
+                  currentMaxBound: room.currentMaxBound,
+                  lastGuess: room.lastGuess,
+                  lastFeedback: room.lastFeedback,
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(
-                      child: StatCard(
-                        label: 'SAFE RANGE',
-                        value: room.rangeText,
-                        icon: Icons.track_changes,
-                        accent: AppTheme.brightCyan,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
                     Expanded(
                       child: StatCard(
                         label: 'LIVES LEFT',
@@ -614,6 +620,7 @@ class _EndGameDialogState extends State<_EndGameDialog>
   late final AnimationController _controller;
   late final Animation<double> _opacity;
   late final Animation<Offset> _slide;
+  late final ConfettiController _confettiController;
 
   @override
   void initState() {
@@ -633,11 +640,21 @@ class _EndGameDialogState extends State<_EndGameDialog>
       parent: _controller,
       curve: Curves.easeOutCubic,
     ));
+    // Confetti: play a 2-second burst when the relevant side wins.
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
+    if (widget.isWin) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _confettiController.play();
+        HapticFeedback.mediumImpact();
+      });
+    }
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _confettiController.dispose();
     super.dispose();
   }
 
@@ -667,28 +684,55 @@ class _EndGameDialogState extends State<_EndGameDialog>
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      child: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _slide,
-          child: Container(
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          // Confetti overlay — bursts from the top center when the
+          // relevant side wins.
+          if (widget.isWin)
+            Positioned(
+              top: -10,
+              child: ConfettiWidget(
+                confettiController: _confettiController,
+                blastDirection: math.pi / 2,
+                maxBlastForce: 12,
+                minBlastForce: 6,
+                emissionFrequency: 0.4,
+                numberOfParticles: 18,
+                gravity: 0.15,
+                blastDirectionality: BlastDirectionality.directional,
+                colors: const [
+                  AppTheme.deepTeal,
+                  AppTheme.brightCyan,
+                  Color(0xFFFFD700),
+                  Colors.white,
+                ],
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: headlineColor.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(headlineIcon, color: headlineColor, size: 40),
+          // The dialog content
+          FadeTransition(
+            opacity: _opacity,
+            child: SlideTransition(
+              position: _slide,
+              child: Container(
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
                 ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: headlineColor.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(headlineIcon, color: headlineColor, size: 40),
+                    ),
                 const SizedBox(height: 18),
                 Text(
                   headline,
@@ -758,6 +802,8 @@ class _EndGameDialogState extends State<_EndGameDialog>
             ),
           ),
         ),
+      ),
+    ],
       ),
     );
   }

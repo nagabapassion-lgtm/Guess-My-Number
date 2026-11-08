@@ -405,7 +405,7 @@ class _UsernameEditor extends StatelessWidget {
             controller: controller,
             enabled: !saving,
             decoration: InputDecoration(
-              hintText: 'e.g. Passion',
+              hintText: 'e.g. John',
               prefixIcon:
                   const Icon(Icons.person_outline, color: AppTheme.mutedText),
               counterText: '${controller.text.length}/24',
