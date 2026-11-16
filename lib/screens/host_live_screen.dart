@@ -545,7 +545,7 @@ class _HistoryRow extends StatelessWidget {
             width: 28,
             height: 28,
             alignment: Alignment.center,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppTheme.deepTeal,
               shape: BoxShape.circle,
             ),

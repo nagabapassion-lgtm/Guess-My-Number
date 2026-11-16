@@ -15,11 +15,15 @@
       ]
     },
     {
-      "collectionGroup": "entries",
+      "collectionGroup": "players",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "guessCount",
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "joinedAt",
           "order": "ASCENDING"
         }
       ]

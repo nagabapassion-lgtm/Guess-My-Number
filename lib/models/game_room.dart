@@ -9,24 +9,17 @@ import 'game_phase.dart';
 /// This is the in-memory mirror of the Firestore document at
 /// `rooms/{roomId}`. It is intentionally immutable: whenever the room
 /// state changes we create a new [GameRoom] rather than mutating fields.
-/// This makes the data flow easy to reason about and supports future
-/// features like undo / replay without extra plumbing.
 ///
-/// v4 schema changes from v3:
-///   - Added [round] field. Each new round (initial + every rematch)
-///     bumps this counter. Guesses are stamped with the round they
-///     belong to. This replaces the v3 pattern of deleting old guesses
-///     on rematch - which was impossible to do atomically (Firestore
-///     transactions can't read subcollections). Now we just filter
-///     client-side: `where('round', '==', room.round)`. Old guess
-///     docs stay in Firestore forever (cheap, harmless, invisible to
-///     the player because they're filtered out).
+/// v5 (Race mode) changes from v4:
+///   - Added [mode] field: "classic" (default) or "race".
+///   - Added race-specific fields: [maxPlayers], [winnerId], [winnerName].
+///   - The existing fields (playerId, playerName, currentMinBound, etc.)
+///     are still used by Classic mode. Race mode uses a `players`
+///     subcollection instead — see [RacePlayer].
 ///
-/// Trust model: [secretNumber] is intentionally stored here and in
-/// Firestore for v1 simplicity. The host does not need to stay online.
-/// This means a technically-savvy player could read the secret by
-/// querying Firestore directly. v2 can move the secret off Firestore
-/// and rely on Cloud Functions for authoritative guess processing.
+/// Backward compatibility: rooms created before v5 have no `mode` field.
+/// `fromFirestore` defaults `mode` to 'classic', so existing Classic
+/// rooms continue to work unchanged.
 class GameRoom {
   final String id;
   final String hostId;
@@ -40,19 +33,27 @@ class GameRoom {
   final int currentMaxBound;
   final int attemptsLeft;
   final int secretNumber;
-
-  /// Monotonically increasing round counter. Starts at 1 when the
-  /// room is created. Bumped by 1 every time the host stages a new
-  /// round (offerRematch). Guesses carry this round number so the
-  /// UI can filter to the current round.
   final int round;
-
   final int? lastGuess;
   final FeedbackType? lastFeedback;
-  final String? winner; // 'host' or 'player'
+  final String? winner; // 'host' or 'player' — Classic only
   final int? revealedSecret;
   final DateTime? createdAt;
   final DateTime? lastUpdated;
+
+  // ----- v5 Race mode fields -----
+  /// "classic" (default) or "race". Determines which fields are used.
+  final String mode;
+
+  /// Race only: max number of players allowed (2-5). Null for Classic.
+  final int? maxPlayers;
+
+  /// Race only: the uid of the player who won the race. Null until
+  /// someone guesses correctly (or until the race ends with no winner).
+  final String? winnerId;
+
+  /// Race only: display name of the winner. Null until someone wins.
+  final String? winnerName;
 
   const GameRoom({
     required this.id,
@@ -74,10 +75,16 @@ class GameRoom {
     this.revealedSecret,
     this.createdAt,
     this.lastUpdated,
+    this.mode = 'classic',
+    this.maxPlayers,
+    this.winnerId,
+    this.winnerName,
   });
 
   /// Build a [GameRoom] from a Firestore document snapshot.
   /// All fields are read defensively so a missing value does not crash.
+  /// v5 fields default to Classic values when absent, so existing
+  /// rooms created before Race mode shipped continue to work.
   factory GameRoom.fromFirestore(String id, Map<String, dynamic> data) {
     return GameRoom(
       id: id,
@@ -101,10 +108,15 @@ class GameRoom {
       revealedSecret: (data['revealedSecret'] as num?)?.toInt(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       lastUpdated: (data['lastUpdated'] as Timestamp?)?.toDate(),
+      // v5 fields — default to Classic values when absent.
+      mode: data['mode'] as String? ?? 'classic',
+      maxPlayers: (data['maxPlayers'] as num?)?.toInt(),
+      winnerId: data['winnerId'] as String?,
+      winnerName: data['winnerName'] as String?,
     );
   }
 
-  /// The fields written to Firestore when a host creates a new room.
+  /// The fields written to Firestore when a host creates a new Classic room.
   /// Server timestamps are used so the values are correct regardless of
   /// the device clock.
   Map<String, dynamic> toCreateMap() {
@@ -125,6 +137,10 @@ class GameRoom {
       'lastFeedback': null,
       'winner': null,
       'revealedSecret': null,
+      'mode': mode,
+      'maxPlayers': maxPlayers,
+      'winnerId': null,
+      'winnerName': null,
       'createdAt': FieldValue.serverTimestamp(),
       'lastUpdated': FieldValue.serverTimestamp(),
     };
@@ -135,9 +151,24 @@ class GameRoom {
   bool get isPlaying => phase == GamePhase.playing;
   bool get isOver => phase == GamePhase.won || phase == GamePhase.lost;
   bool get isRematchOffered => phase == GamePhase.rematchOffered;
+  bool get isCountdown => phase == GamePhase.countdown;
+  bool get isFinished => phase == GamePhase.finished;
   bool get playerWon => phase == GamePhase.won;
   bool get playerLost => phase == GamePhase.lost;
 
+  /// Mode getters.
+  bool get isClassic => mode == 'classic';
+  bool get isRace => mode == 'race';
+
+  /// True if the room is in a terminal state (game over, regardless of mode).
+  /// Classic: won/lost. Race: finished.
+  bool get isGameEnded =>
+      phase == GamePhase.won ||
+      phase == GamePhase.lost ||
+      phase == GamePhase.finished;
+
   /// The current safe range as a human-readable string, e.g. "12 to 87".
+  /// Classic only — Race mode uses per-player ranges from the players
+  /// subcollection.
   String get rangeText => '$currentMinBound to $currentMaxBound';
 }

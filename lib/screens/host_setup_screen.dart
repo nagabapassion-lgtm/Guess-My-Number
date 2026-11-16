@@ -73,7 +73,7 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
           verticalSpacing: 16,
           stepDelayMs: 90,
           children: [
-            AccentBanner(
+            const AccentBanner(
               title: 'Set up your game space',
               subtitle:
                   'Fill in the details below. Your friend will get an invite code to join.',
@@ -139,7 +139,7 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                 tooltip: _obscureSecret ? 'Show number' : 'Hide number',
               ),
             ),
-            _HintCard(
+            const _HintCard(
               text:
                   'The secret number must be inside the range you picked. The player will not see it.',
             ),

@@ -3,48 +3,63 @@
 /// Stored as a name string in Firestore (e.g. "waiting"), parsed back into
 /// this enum when read. Keeping it an enum (instead of raw strings) makes
 /// the rest of the code type-safe and lets the compiler catch typos.
+///
+/// Two modes share this enum:
+///   - Classic (1v1): waiting → playing → won/lost → rematchOffered
+///   - Race (2-5 players): waiting → countdown → playing → finished
+///
+/// The `mode` field on the room doc determines which phases are valid.
+/// Classic rooms never use `countdown` or `finished`. Race rooms never
+/// use `won`, `lost`, or `rematchOffered`.
 enum GamePhase {
   /// Host has created the room but no player has joined yet.
-  /// UI on host side: show invite code, "waiting" message.
+  /// Used by both Classic and Race modes.
   waiting,
 
   /// Player has joined and is actively guessing.
-  /// Both screens show live game state.
+  /// Classic: 1 player is guessing. Race: all players are guessing
+  /// simultaneously.
   playing,
 
-  /// Player guessed the secret correctly. Player wins, host loses.
-  /// Both screens show a victory dialog for the player.
+  /// Classic only: Player guessed the secret correctly. Player wins,
+  /// host loses.
   won,
 
-  /// Player ran out of lives. Host wins, player loses.
-  /// Both screens show a defeat dialog for the player.
+  /// Classic only: Player ran out of lives. Host wins, player loses.
   lost,
 
-  /// Host offered a new round by entering a new secret number.
-  /// The room is paused in this state until the player either:
-  ///   - accepts (phase -> playing, the new round begins), or
-  ///   - declines (phase -> waiting, the room is vacated so the
-  ///     host can invite someone new with the same code).
+  /// Classic only: Host offered a new round by entering a new secret
+  /// number. The room is paused until the player accepts or declines.
+  rematchOffered,
+
+  /// Race only: Host tapped "Start Race". A 3-second countdown is
+  /// running before the race actually begins. This gives all joined
+  /// players a fair start — without it, the first player to join
+  /// would start guessing before others.
   ///
-  /// This intermediate phase is what makes the rematch flow race-free:
-  ///   - The player cannot submit guesses (RoomService.processPlayerGuess
-  ///     rejects any phase that is not 'playing').
-  ///   - The host's UI shows "Waiting for player to accept...".
-  ///   - Old guesses are filtered out by the `round` counter (no need
-  ///     to delete them, which would require a transaction that reads
-  ///     a subcollection - impossible in Firestore).
+  /// During this phase:
+  ///   - Players see "Race starts in 3... 2... 1..."
+  ///   - Guesses are rejected (processRaceGuess checks for 'playing')
+  ///   - The host's screen shows the countdown
+  ///   - After 3 seconds, the host's client flips phase to 'playing'
+  countdown,
+
+  /// Race only: Someone won the race (first to guess correctly), OR
+  /// all players ran out of lives with no winner. The room is over.
   ///
-  /// Industry precedent: chess.com / Lichess use an equivalent "rematch
-  /// offer pending" state for 1v1 games where one side must explicitly
-  /// opt in before the new round starts.
-  rematchOffered;
+  /// During this phase:
+  ///   - All players see the results screen (winner, standings,
+  ///     revealed secret)
+  ///   - Guesses are rejected
+  ///   - The host can rematch (creates a new round) or close the room
+  finished;
 
   /// Human-readable label for status displays.
   /// No emojis per design rule; words only.
   String get friendlyName {
     switch (this) {
       case GamePhase.waiting:
-        return 'Waiting for a player to join';
+        return 'Waiting for players to join';
       case GamePhase.playing:
         return 'Game in progress';
       case GamePhase.won:
@@ -53,6 +68,10 @@ enum GamePhase {
         return 'Player lost the round';
       case GamePhase.rematchOffered:
         return 'Host offered a new round';
+      case GamePhase.countdown:
+        return 'Race starting...';
+      case GamePhase.finished:
+        return 'Race finished';
     }
   }
 

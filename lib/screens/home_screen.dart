@@ -1,16 +1,16 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../controllers/host_controller.dart';
 import '../controllers/player_controller.dart';
+import '../controllers/race_controller.dart';
 import '../widgets/animations.dart';
 import 'host_setup_screen.dart';
 import 'player_join_screen.dart';
-import 'profile_screen.dart';
+import 'race_host_setup_screen.dart';
 import 'solo_setup_screen.dart';
 
-/// The first screen the user sees after signing in.
+/// The first screen the user sees after the app launches.
 ///
 /// Three paths, ordered by friction (lowest first):
 ///   1. Play Solo - no friends needed, instant start.
@@ -19,9 +19,6 @@ import 'solo_setup_screen.dart';
 ///
 /// The solo card sits on top with a distinct gradient treatment because
 /// it is the mode anyone can play at any time, even alone at 2am.
-///
-/// The AppBar shows a profile chip on the right: tap it to open the
-/// Profile screen (where you can edit your username and sign out).
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -29,11 +26,6 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.offWhite,
-      appBar: AppBar(
-        title: const Text('Guess My Number'),
-        actions: const [_ProfileChip()],
-        automaticallyImplyLeading: false,
-      ),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -81,6 +73,23 @@ class HomeScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: FadeSlideIn(
+                  delay: const Duration(milliseconds: 430),
+                  child: _RoleCard(
+                    label: 'Host a Race',
+                    description:
+                        'Set a secret, then 2-5 players race to guess it first. Everyone guesses at the same time.',
+                    icon: Icons.groups,
+                    accent: AppTheme.brightCyan,
+                    onTap: () => _goToRaceHostSetup(context),
+                  ),
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: FadeSlideIn(
                   delay: const Duration(milliseconds: 460),
                   child: _RoleCard(
                     label: 'Join a Game',
@@ -118,83 +127,18 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  void _goToRaceHostSetup(BuildContext context) {
+    // Reset any stale race state from a previous session.
+    RaceHostController.instance.leaveRoom();
+    Navigator.of(context).push(
+      AppTheme.pageRoute(const RaceHostSetupScreen()),
+    );
+  }
+
   void _goToPlayerJoin(BuildContext context) {
     PlayerController.instance.leaveRoom();
     Navigator.of(context).push(
       AppTheme.pageRoute(const PlayerJoinScreen()),
-    );
-  }
-}
-
-/// The profile chip in the AppBar. Tapping it opens the Profile
-/// screen where the user can edit their username and sign out.
-///
-/// Shows the user's display name (or "Guest" for anonymous users)
-/// with a dropdown arrow. Reads the auth state live so it updates
-/// immediately when the user signs in or out.
-class _ProfileChip extends StatelessWidget {
-  const _ProfileChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        final user = snapshot.data;
-        final displayName = user?.displayName ?? 'Guest';
-        final isGuest = user == null || user.isAnonymous;
-        final photoUrl = user?.photoURL;
-
-        return InkWell(
-          onTap: () {
-            Navigator.of(context).push(
-              AppTheme.pageRoute(const ProfileScreen()),
-            );
-          },
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (photoUrl != null && !isGuest)
-                  ClipOval(
-                    child: Image.network(
-                      photoUrl,
-                      width: 22,
-                      height: 22,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.account_circle,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                  )
-                else
-                  Icon(
-                    isGuest ? Icons.person_outline : Icons.account_circle,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                const SizedBox(width: 6),
-                Text(
-                  isGuest ? 'Guest' : displayName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(Icons.chevron_right,
-                    color: Colors.white, size: 18),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -204,7 +148,7 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+      padding: const EdgeInsets.fromLTRB(24, 36, 24, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -215,7 +159,7 @@ class _Hero extends StatelessWidget {
           FadeSlideIn(
             delay: const Duration(milliseconds: 100),
             child: Text(
-              'Guess My Number',
+              'Number Guessing Game',
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: AppTheme.nearBlack,

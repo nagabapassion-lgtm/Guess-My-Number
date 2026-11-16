@@ -73,7 +73,7 @@ class AppTheme {
   ];
 
   static ThemeData get data {
-    final colorScheme = ColorScheme(
+    const colorScheme = ColorScheme(
       brightness: Brightness.light,
       primary: deepTeal,
       onPrimary: Colors.white,
@@ -89,20 +89,20 @@ class AppTheme {
       onTertiaryContainer: nearBlack,
       error: crimson,
       onError: Colors.white,
-      errorContainer: Color(0xFFF8D7D5),
+      errorContainer: const Color(0xFFF8D7D5),
       onErrorContainer: nearBlack,
       surface: offWhite,
       onSurface: nearBlack,
       surfaceContainerLowest: Colors.white,
-      surfaceContainerLow: Color(0xFFFCFCFD),
+      surfaceContainerLow: const Color(0xFFFCFCFD),
       surfaceContainer: offWhite,
       surfaceContainerHigh: surfaceHigh,
       surfaceContainerHighest: surfaceHighest,
       onSurfaceVariant: mutedText,
-      outline: Color(0xFFB8C2CC),
-      outlineVariant: Color(0xFFDCE0E6),
-      shadow: Color(0x14040F16),
-      scrim: Color(0x99040F16),
+      outline: const Color(0xFFB8C2CC),
+      outlineVariant: const Color(0xFFDCE0E6),
+      shadow: const Color(0x14040F16),
+      scrim: const Color(0x99040F16),
       inverseSurface: nearBlack,
       onInverseSurface: offWhite,
       inversePrimary: brightCyan,
@@ -131,11 +131,11 @@ class AppTheme {
 
     // Build the text theme using system fonts. Sizes/weights match the
     // v3 design (Plus Jakarta Sans had the same metrics).
-    final textTheme = TextTheme(
+    const textTheme = TextTheme(
       // Display
-      displayLarge: TextStyle(
+      displayLarge: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const [
+        fontFamilyFallback: [
           'system-ui', 'sans-serif',
         ],
         fontSize: 57,
@@ -144,120 +144,120 @@ class AppTheme {
         letterSpacing: -0.5,
         color: nearBlack,
       ),
-      displayMedium: TextStyle(
+      displayMedium: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 45,
         fontWeight: FontWeight.w800,
         height: 1.15,
         letterSpacing: -0.5,
         color: nearBlack,
       ),
-      displaySmall: TextStyle(
+      displaySmall: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 36,
         fontWeight: FontWeight.w700,
         height: 1.2,
         color: nearBlack,
       ),
       // Headline
-      headlineLarge: TextStyle(
+      headlineLarge: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 32,
         fontWeight: FontWeight.w700,
         height: 1.2,
         color: nearBlack,
       ),
-      headlineMedium: TextStyle(
+      headlineMedium: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 28,
         fontWeight: FontWeight.w700,
         height: 1.25,
         color: nearBlack,
       ),
-      headlineSmall: TextStyle(
+      headlineSmall: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 24,
         fontWeight: FontWeight.w700,
         height: 1.3,
         color: nearBlack,
       ),
       // Title
-      titleLarge: TextStyle(
+      titleLarge: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 20,
         fontWeight: FontWeight.w600,
         height: 1.3,
         color: nearBlack,
       ),
-      titleMedium: TextStyle(
+      titleMedium: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 17,
         fontWeight: FontWeight.w600,
         height: 1.35,
         color: nearBlack,
       ),
-      titleSmall: TextStyle(
+      titleSmall: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 15,
         fontWeight: FontWeight.w600,
         height: 1.4,
         color: nearBlack,
       ),
       // Body
-      bodyLarge: TextStyle(
+      bodyLarge: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 16,
         fontWeight: FontWeight.w400,
         height: 1.5,
         color: nearBlack,
       ),
-      bodyMedium: TextStyle(
+      bodyMedium: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 14,
         fontWeight: FontWeight.w400,
         height: 1.5,
         color: nearBlack,
       ),
-      bodySmall: TextStyle(
+      bodySmall: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 12,
         fontWeight: FontWeight.w400,
         height: 1.45,
         color: mutedText,
       ),
       // Label
-      labelLarge: TextStyle(
+      labelLarge: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 14,
         fontWeight: FontWeight.w600,
         height: 1.4,
         letterSpacing: 0.1,
         color: nearBlack,
       ),
-      labelMedium: TextStyle(
+      labelMedium: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 12,
         fontWeight: FontWeight.w600,
         height: 1.4,
         letterSpacing: 0.5,
         color: nearBlack,
       ),
-      labelSmall: TextStyle(
+      labelSmall: const TextStyle(
         fontFamily: 'Roboto',
-        fontFamilyFallback: const ['system-ui', 'sans-serif'],
+        fontFamilyFallback: ['system-ui', 'sans-serif'],
         fontSize: 11,
         fontWeight: FontWeight.w600,
         height: 1.4,
@@ -268,20 +268,20 @@ class AppTheme {
 
     return base.copyWith(
       textTheme: textTheme,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: deepTeal,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
           fontFamily: 'Roboto',
-          fontFamilyFallback: const ['system-ui', 'sans-serif'],
+          fontFamilyFallback: ['system-ui', 'sans-serif'],
           fontSize: 18,
           fontWeight: FontWeight.w700,
           color: Colors.white,
           letterSpacing: 0.2,
         ),
-        iconTheme: const IconThemeData(color: Colors.white, size: 24),
+        iconTheme: IconThemeData(color: Colors.white, size: 24),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
